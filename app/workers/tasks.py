@@ -142,13 +142,37 @@ def send_dm_task(self, job_id: str):
         job.attempts += 1
         job.updated_at = utc_now()
 
-        if response.status_code == 202:
+        if response.status_code in (200, 202):
             data = response.json()
-            job.pseudogram_dm_id = data.get("dm_id")
-            db.commit()
-            # Schedule reconciliation check in 5 seconds
-            reconcile_dm_status_task.apply_async(args=[job.id], countdown=5)
-            return
+            dm_id = data.get("dm_id")
+            dm_status = data.get("status", "queued")
+            job.pseudogram_dm_id = dm_id
+
+            if dm_status == "delivered":
+                job.status = "SENT"
+                job.last_error = None
+                db.commit()
+                logger.info("Job %s confirmed DELIVERED immediately by PseudoGram.", job_id)
+                return
+
+            if dm_status == "queued":
+                job.status = "QUEUED"
+                db.commit()
+                logger.info("Job %s accepted as QUEUED by PseudoGram. Scheduling reconciliation.", job_id)
+                reconcile_dm_status_task.apply_async(args=[job.id], countdown=5)
+                return
+
+            if dm_status == "failed":
+                if job.attempts < settings.MAX_DM_RETRIES:
+                    job.last_error = "PseudoGram returned status: failed"
+                    db.commit()
+                    raise self.retry(countdown=5)
+                else:
+                    job.status = "FAILED"
+                    job.last_error = "PseudoGram returned status: failed (max retries reached)"
+                    db.commit()
+                    logger.error("Job %s permanently FAILED.", job_id)
+                    return
 
         if response.status_code == 429:
             retry_after_hdr = response.headers.get("Retry-After")

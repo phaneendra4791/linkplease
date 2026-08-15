@@ -94,6 +94,53 @@ def test_complete_comment_to_dm_flow():
     assert job.status == "SENT"
 
 
+def test_delivered_dm_is_never_retried():
+    db = TestingSyncSessionLocal()
+
+    rule = Rule(id="rule_delivered_test", keyword="LINK", dm_message="Here is the link.")
+    db.add(rule)
+    db.commit()
+
+    job = DMJob(
+        id="job_delivered_100",
+        user_id="usr_delivered_user",
+        rule_id="rule_delivered_test",
+        comment_id="cmt_deliv_100",
+        dm_message="Here is the link.",
+        idempotency_key="dm_job_usr_delivered_user_rule_delivered_test",
+        status="QUEUED"
+    )
+    db.add(job)
+    db.commit()
+
+    mock_delivered_res = MagicMock()
+    mock_delivered_res.status_code = 200
+    mock_delivered_res.json.return_value = {
+        "dm_id": "dm_delivered_abc",
+        "status": "delivered"
+    }
+
+    with patch("app.workers.tasks.rate_limiter.acquire_slot", return_value=(True, 0.0)), \
+         patch("app.clients.pseudogram.PseudoGramClient.send_dm", return_value=mock_delivered_res) as mock_send_http, \
+         patch("app.workers.tasks.reconcile_dm_status_task.apply_async") as mock_reconcile:
+
+        # First execution -> PseudoGram returns status: delivered
+        send_dm_task("job_delivered_100")
+
+        # 1. Status updated to terminal SENT state
+        db.refresh(job)
+        assert job.status == "SENT"
+        assert job.pseudogram_dm_id == "dm_delivered_abc"
+
+        # 2. No status reconciliation scheduled because delivery is already confirmed
+        assert mock_reconcile.call_count == 0
+        assert mock_send_http.call_count == 1
+
+        # Second execution (e.g. spurious re-trigger) -> Must NOT re-send HTTP request or retry!
+        send_dm_task("job_delivered_100")
+        assert mock_send_http.call_count == 1  # Still 1 call, zero retries made!
+
+
 def test_duplicate_user_rule_prevention():
     db = TestingSyncSessionLocal()
 
