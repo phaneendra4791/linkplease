@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from app.core.logging import setup_logging
 from app.api import rules, webhook, stats
 
@@ -14,6 +15,10 @@ app = FastAPI(
 app.include_router(rules.router)
 app.include_router(webhook.router)
 app.include_router(stats.router)
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
 
 @app.get("/healthz")
 async def health_check():
