@@ -1,6 +1,7 @@
 import time
 import math
 from celery import shared_task
+from celery.exceptions import Retry
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
@@ -186,7 +187,7 @@ def send_dm_task(self, job_id: str):
         else:
             db.commit()
             raise self.retry(countdown=5)
-    except self.Retry:
+    except Retry:
         raise
     except Exception as exc:
         db.rollback()
@@ -235,7 +236,7 @@ def reconcile_dm_status_task(self, job_id: str):
         else:
             # Server error on polling, retry polling in 5 seconds
             raise self.retry(countdown=5)
-    except self.Retry:
+    except Retry:
         raise
     except Exception as exc:
         db.rollback()
