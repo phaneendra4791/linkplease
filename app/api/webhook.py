@@ -1,0 +1,39 @@
+import json
+from fastapi import APIRouter, Request, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.database import get_async_db
+from app.core.security import verify_webhook_signature
+from app.services.webhook_service import record_and_enqueue_webhook
+from app.core.logging import logger
+
+router = APIRouter(tags=["Webhook"])
+
+@router.post("/webhook", status_code=status.HTTP_200_OK)
+async def handle_webhook(request: Request, db: AsyncSession = Depends(get_async_db)):
+    raw_body = await request.body()
+    signature_hdr = request.headers.get("X-PseudoGram-Signature")
+
+    # HMAC Signature verification
+    if not verify_webhook_signature(raw_body, signature_hdr):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature"
+        )
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception as e:
+        logger.error("Failed to parse webhook JSON body: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed JSON body"
+        )
+
+    is_duplicate, event = await record_and_enqueue_webhook(db, payload)
+
+    return {
+        "status": "ok",
+        "duplicate": is_duplicate,
+        "event_id": payload.get("event_id")
+    }
