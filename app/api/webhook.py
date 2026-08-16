@@ -1,5 +1,5 @@
 import json
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_async_db
@@ -9,10 +9,15 @@ from app.core.logging import logger
 
 router = APIRouter(tags=["Webhook"])
 
+
 @router.post("/webhook", status_code=status.HTTP_200_OK)
-async def handle_webhook(request: Request, db: AsyncSession = Depends(get_async_db)):
+async def handle_webhook(
+    request: Request,
+    x_pseudogram_signature: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_async_db)
+):
     raw_body = await request.body()
-    signature_hdr = request.headers.get("X-PseudoGram-Signature")
+    signature_hdr = x_pseudogram_signature
 
     # HMAC Signature verification
     if not verify_webhook_signature(raw_body, signature_hdr):
