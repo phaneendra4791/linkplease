@@ -123,7 +123,7 @@ Reports live statistical metrics strictly derived from persistent PostgreSQL sta
    - Requests are throttled and Celery tasks rescheduled dynamically before sending HTTP requests to PseudoGram.
 
 3. **HTTP Failure Handling**:
-   - `500 Internal Error`: Bounded exponential backoff + jitter up to 5 retries.
+   - `500 Internal Error`: Bounded exponential backoff up to 5 retries.
    - `429 Rate Limited`: Respects `Retry-After` header and reschedules Celery task countdown.
    - `400 Bad Request`: Marked as `FAILED` permanently without blind retrying.
    - `202 Accepted`: Tracked as `QUEUED`, deterministic `Idempotency-Key` (`dm_job_{user_id}_{rule_id}`) passed, reconciled via polling `GET /v1/dm/{dm_id}` until `delivered` or `failed`.

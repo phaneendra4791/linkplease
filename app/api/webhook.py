@@ -1,11 +1,12 @@
 import json
-from fastapi import APIRouter, Request, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Request, Depends, HTTPException, status, Header, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_async_db
 from app.core.security import verify_webhook_signature
 from app.services.webhook_service import record_and_enqueue_webhook
 from app.core.logging import logger
+from app.schemas.webhook import WebhookPayload
 
 router = APIRouter(tags=["Webhook"])
 
@@ -13,6 +14,7 @@ router = APIRouter(tags=["Webhook"])
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def handle_webhook(
     request: Request,
+    body: WebhookPayload = Body(..., description="Webhook payload from PseudoGram"),
     x_pseudogram_signature: str | None = Header(default=None),
     db: AsyncSession = Depends(get_async_db)
 ):
